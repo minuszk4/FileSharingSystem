@@ -1,0 +1,160 @@
+
+
+services:
+  # 🌐 GATEWAY (Spring Boot Web Interface)
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    container_name: gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - TRACKER_URL=http://tracker:8081
+      - NODE_DISCOVERY_URL=http://node1:2206
+      - BOOTSTRAP_NODE=node1:8082:8085
+    depends_on:
+      - tracker
+      - node1
+    volumes:
+      - ./data/shared/upload:/app/upload
+    networks:
+      - dfss_network
+
+  # 🧭 TRACKER SERVICE (Optional BitTorrent tracker)
+  tracker:
+    build:
+      context: .
+      dockerfile: tracker/Dockerfile
+    container_name: tracker
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - dfss_network
+
+  # ⚙️ NODE 1 (Bootstrap Peer)
+  node1:
+    build:
+      context: .
+      dockerfile: node/Dockerfile
+    container_name: node1
+    environment:
+      - NODE_ID=node1
+      - NODE_PORT=2206
+      - HTTP_PORT=8082
+      - DATA_PATH=/data/node1
+      - BOOTSTRAP_NODE=
+    ports:
+      - "2206:2206/udp"
+      - "8082:8082"
+    volumes:
+      - ./data/node1:/data/node1
+    networks:
+      - dfss_network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8082/node/nodes" ]
+      interval: 5s
+      retries: 5
+
+  # ⚙️ NODE 2
+  node2:
+    build:
+      context: .
+      dockerfile: node/Dockerfile
+    container_name: node2
+    environment:
+      - NODE_ID=node2
+      - NODE_PORT=2207
+      - HTTP_PORT=8083
+      - DATA_PATH=/data/node2
+      - BOOTSTRAP_NODE=node1:2206
+    ports:
+      - "2207:2207/udp"
+      - "8083:8083"
+    depends_on:
+      - node1
+    volumes:
+      - ./data/node2:/data/node2
+    networks:
+      - dfss_network
+
+  # ⚙️ NODE 3
+  node3:
+    build:
+      context: .
+      dockerfile: node/Dockerfile
+    container_name: node3
+    environment:
+      - NODE_ID=node3
+      - NODE_PORT=2208
+      - HTTP_PORT=8084
+      - DATA_PATH=/data/node3
+      - BOOTSTRAP_NODE=node1:2206
+    ports:
+      - "2208:2208/udp"
+      - "8084:8084"
+    depends_on:
+      - node1
+    volumes:
+      - ./data/node3:/data/node3
+    networks:
+      - dfss_network
+
+  # ⚙️ NODE 4
+  node4:
+    build:
+      context: .
+      dockerfile: node/Dockerfile
+    container_name: node4
+    environment:
+      - NODE_ID=node4
+      - NODE_PORT=2209
+      - HTTP_PORT=8085
+      - DATA_PATH=/data/node4
+      - BOOTSTRAP_NODE=node1:2206
+    ports:
+      - "2209:2209/udp"
+      - "8085:8085"
+    depends_on:
+      - node1
+    volumes:
+      - ./data/node4:/data/node4
+    networks:
+      - dfss_network
+
+  # ⚙️ NODE 5
+  node5:
+    build:
+      context: .
+      dockerfile: node/Dockerfile
+    container_name: node5
+    environment:
+      - NODE_ID=node5
+      - NODE_PORT=2210
+      - HTTP_PORT=8086
+      - DATA_PATH=/data/node5
+      - BOOTSTRAP_NODE=node1:2206
+    ports:
+      - "2210:2210/udp"
+      - "8086:8086"
+    depends_on:
+      - node1
+    volumes:
+      - ./data/node5:/data/node5
+    networks:
+      - dfss_network
+
+networks:
+  dfss_network:
+    driver: bridge
