@@ -9,6 +9,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+    networks:
+      - dfss_network
+
 
   gateway:
     build:
@@ -22,6 +27,8 @@ services:
       - TRACKER_URL=http://tracker:8081
       - NODE_DISCOVERY_URL=http://node1:2206
       - BOOTSTRAP_NODE=node1:8082:8085
+      - NODES=http://node1:8082,http://node2:8083,http://node3:8084,http://node4:8085,http://node5:8086
+
     depends_on:
       - tracker
       - node1
@@ -58,6 +65,8 @@ services:
     ports:
       - "2206:2206/udp"
       - "8082:8082"
+      - "2206:2206/tcp"
+
     volumes:
       - ./data/node1:/data/node1
     networks:
@@ -82,6 +91,8 @@ services:
     ports:
       - "2207:2207/udp"
       - "8083:8083"
+      - "2207:2207/tcp"
+
     depends_on:
       - node1
     volumes:
@@ -104,6 +115,8 @@ services:
     ports:
       - "2208:2208/udp"
       - "8084:8084"
+      - "2208:2208/tcp"
+
     depends_on:
       - node1
     volumes:
@@ -126,6 +139,8 @@ services:
     ports:
       - "2209:2209/udp"
       - "8085:8085"
+      - "2209:2209/tcp"
+
     depends_on:
       - node1
     volumes:
@@ -148,6 +163,8 @@ services:
     ports:
       - "2210:2210/udp"
       - "8086:8086"
+      - "2210:2210/tcp"
+
     depends_on:
       - node1
     volumes:

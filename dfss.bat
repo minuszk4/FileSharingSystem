@@ -12,6 +12,7 @@ echo   [1] Build system  (Maven + Docker images)
 echo   [2] Run system    (Start all containers)
 echo   [3] Stop system   (Stop and remove containers)
 echo   [4] Clean all     (Remove containers, images, volumes)
+echo    [5] killing ports (Kill processes on ports, shutdown docker containers before running)
 echo   [0] Exit
 echo.
 set /p choice= Select an option (0-4):
@@ -20,6 +21,7 @@ if "%choice%"=="1" goto BUILD
 if "%choice%"=="2" goto RUN
 if "%choice%"=="3" goto STOP
 if "%choice%"=="4" goto CLEAN
+if "%choice%"=="5" goto KILL_PORTS
 if "%choice%"=="0" exit
 goto MENU
 
@@ -100,3 +102,21 @@ echo All containers, images, and volumes removed.
 echo.
 pause
 goto MENU
+
+:KILL_PORTS
+echo Killing conflicting processes...
+
+REM Danh sách các port Node & Gateway
+set PORTS=8080 8082 8083 8084 8085 8086
+
+for %%p in (%PORTS%) do (
+    for /f "tokens=5" %%a in ('netstat -aon ^| findstr :%%p ^| findstr LISTENING') do (
+        echo Killing process %%a on port %%p
+        taskkill /F /PID %%a >nul 2>&1
+    )
+)
+echo Done killing ports.
+echo.
+pause
+goto MENU
+
