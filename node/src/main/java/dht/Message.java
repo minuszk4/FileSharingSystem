@@ -1,5 +1,6 @@
 package dht;
 
+import bittorrent.TorrentFile;
 import core.*;
 
 import java.io.*;
@@ -11,7 +12,11 @@ public abstract class Message implements Serializable {
         PING, PONG,
         STORE, STORE_RESPONSE,
         FIND_NODE, FIND_NODE_RESPONSE,
-        FIND_VALUE, FIND_VALUE_RESPONSE
+        FIND_VALUE, FIND_VALUE_RESPONSE,
+        STORE_PIECE,STORE_PIECE_RESPONSE,
+        FIND_PIECE,FIND_PIECES_RESPONSE,
+        STORE_METADATA,STORE_METADATA_RESPONSE,
+        GET_PIECE,GET_PIECES_RESPONSE,
     }
 
     protected final String messageId;
@@ -183,4 +188,151 @@ class FindValueResponseMessage extends Message {
     public byte[] getValue() { return value; }
     public List<Contact> getContacts() { return contacts; }
     public boolean hasValue() { return value != null; }
+}
+
+// ==================== StorePieceMessage.java ====================
+
+class StorePieceMessage extends Message {
+    private static final long serialVersionUID = 1L;
+
+    private String pieceKey;
+    private byte[] pieceData;
+    private int httpPort;
+
+    public StorePieceMessage(NodeID senderId, String pieceKey, byte[] pieceData, int httpPort) {
+        super(MessageType.STORE_PIECE,senderId);
+        this.pieceKey = pieceKey;
+        this.pieceData = pieceData;
+        this.httpPort = httpPort;
+    }
+
+    public String getPieceKey() { return pieceKey; }
+    public byte[] getPieceData() { return pieceData; }
+    public int getHttpPort() { return httpPort; }
+
+    @Override
+    public String toString() {
+        return "StorePieceMessage{key=" + pieceKey + ", size=" + (pieceData != null ? pieceData.length : 0) + " bytes}";
+    }
+}
+
+// ==================== StorePieceResponseMessage ====================
+ class StorePieceResponseMessage extends Message {
+    private static final long serialVersionUID = 1L;
+
+    private String requestId;
+    private boolean success;
+
+    public StorePieceResponseMessage(NodeID senderId, String requestId, boolean success) {
+        super(MessageType.STORE_PIECE_RESPONSE,senderId);
+        this.requestId = requestId;
+        this.success = success;
+    }
+
+    public String getRequestId() { return requestId; }
+    public boolean isSuccess() { return success; }
+
+    @Override
+    public String toString() {
+        return "StorePieceResponseMessage{requestId=" + requestId + ", success=" + success + "}";
+    }
+}
+
+// ==================== GetPieceMessage====================;
+
+class GetPieceMessage extends Message {
+    private static final long serialVersionUID = 1L;
+
+    private String pieceKey;
+    private int httpPort;
+
+    public GetPieceMessage(NodeID senderId, String pieceKey, int httpPort) {
+        super(MessageType.GET_PIECE,senderId);
+        this.pieceKey = pieceKey;
+        this.httpPort = httpPort;
+    }
+
+    public String getPieceKey() { return pieceKey; }
+    public int getHttpPort() { return httpPort; }
+
+    @Override
+    public String toString() {
+        return "GetPieceMessage{key=" + pieceKey + "}";
+    }
+}
+
+// ==================== GetPieceResponseMessage ====================
+
+
+ class GetPieceResponseMessage extends Message {
+    private static final long serialVersionUID = 1L;
+
+    private String requestId;
+    private String pieceKey;
+    private byte[] pieceData;
+
+    public GetPieceResponseMessage(NodeID senderId, String requestId, String pieceKey, byte[] pieceData) {
+        super(MessageType.GET_PIECES_RESPONSE,senderId);
+        this.requestId = requestId;
+        this.pieceKey = pieceKey;
+        this.pieceData = pieceData;
+    }
+
+    public String getRequestId() { return requestId; }
+    public String getPieceKey() { return pieceKey; }
+    public byte[] getPieceData() { return pieceData; }
+    public boolean hasData() { return pieceData != null && pieceData.length > 0; }
+
+    @Override
+    public String toString() {
+        return "GetPieceResponseMessage{key=" + pieceKey + ", hasData=" + hasData() +
+                ", size=" + (pieceData != null ? pieceData.length : 0) + " bytes}";
+    }
+}
+
+// ==================== StoreMetadataMessage ====================
+
+class StoreMetadataMessage extends Message {
+    private static final long serialVersionUID = 1L;
+
+    private TorrentFile metadata;
+    private int httpPort;
+
+    public StoreMetadataMessage(NodeID senderId, TorrentFile metadata, int httpPort) {
+        super(MessageType.STORE_METADATA,senderId);
+        this.metadata = metadata;
+        this.httpPort = httpPort;
+    }
+
+    public TorrentFile getMetadata() { return metadata; }
+    public int getHttpPort() { return httpPort; }
+
+    @Override
+    public String toString() {
+        return "StoreMetadataMessage{infoHash=" + (metadata != null ? metadata.getInfoHash() : "null") + "}";
+    }
+}
+
+
+
+
+class StoreMetadataResponseMessage extends Message {
+    private static final long serialVersionUID = 1L;
+
+    private String requestId;
+    private boolean success;
+
+    public StoreMetadataResponseMessage(NodeID senderId, String requestId, boolean success) {
+        super(MessageType.STORE_METADATA_RESPONSE,senderId);
+        this.requestId = requestId;
+        this.success = success;
+    }
+
+    public String getRequestId() { return requestId; }
+    public boolean isSuccess() { return success; }
+
+    @Override
+    public String toString() {
+        return "StoreMetadataResponseMessage{requestId=" + requestId + ", success=" + success + "}";
+    }
 }

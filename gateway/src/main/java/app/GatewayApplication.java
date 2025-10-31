@@ -31,9 +31,11 @@ public class GatewayApplication {
                 @Override
                 public void addCorsMappings(CorsRegistry registry) {
                     registry.addMapping("/**")
-                            .allowedOrigins("http://localhost:3000")
+                            .allowedOriginPatterns("*")
                             .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                            .allowCredentials(true);
+                            .allowedHeaders("*")
+                            .allowCredentials(false)
+                            .exposedHeaders("*");
                 }
             };
         }

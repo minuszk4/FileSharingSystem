@@ -6,15 +6,16 @@ import java.io.*;
 public class PeerConnection {
     private final String ip;
     private final int port;
-
+    private MetadataStore metadataStore;
     private static final byte MSG_REQUEST_PIECE = 0x01;
     private static final byte MSG_REQUEST_METADATA = 0x02;
     private static final byte MSG_METADATA_RESPONSE = 0x03;
     private static final byte MSG_METADATA_REJECT = 0x04;
 
-    public PeerConnection(String ip, int port) {
+    public PeerConnection(String ip, int port,MetadataStore metadataStore) {
         this.ip = ip;
         this.port = port;
+        this.metadataStore = metadataStore;
     }
 
     // Request piece từ peer
@@ -41,6 +42,10 @@ public class PeerConnection {
         }
     }
     public TorrentFile requestMetadata(String infoHash) {
+        if (metadataStore.hasMetadata(infoHash)) {
+            System.out.println("✓ Using cached metadata for " + infoHash);
+            return metadataStore.getMetadata(infoHash);
+        }
         try (Socket socket = new Socket(ip, port);
              DataOutputStream out = new DataOutputStream(socket.getOutputStream());
              DataInputStream in = new DataInputStream(socket.getInputStream())) {
@@ -77,7 +82,7 @@ public class PeerConnection {
                 String pieceHash = in.readUTF();
                 torrent.getPieces().add(pieceHash);
             }
-
+            metadataStore.storeMetadata(torrent);
             System.out.println("✓ Received metadata from " + ip + ":" + port +
                     " - " + fileName + " (" + numPieces + " pieces)");
             return torrent;

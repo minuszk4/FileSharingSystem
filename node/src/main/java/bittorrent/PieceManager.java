@@ -3,6 +3,7 @@ package bittorrent;
 import file.FileManager;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -10,6 +11,7 @@ public class PieceManager {
     private final FileManager fileManager;
     private final Map<String, List<byte[]>> pieces; // infoHash -> piece data list
     private final int pieceSize;
+    private final String storageDir = "./data/pieces/";
 
     public PieceManager(FileManager fileManager, int pieceSize) {
         this.fileManager = fileManager;
@@ -17,7 +19,6 @@ public class PieceManager {
         this.pieceSize = pieceSize;
     }
 
-    // Chia file, lưu piece vào map và trả list hash để tạo TorrentFile
     public List<byte[]> loadFile(String infoHash, File file) throws IOException {
         System.out.println("[loadFile] Start loading file: " + file.getAbsolutePath());
 
@@ -37,6 +38,36 @@ public class PieceManager {
 
         return chunkHashes;
     }
+
+    public List<byte[]> splitFile(File file) throws IOException {
+        List<byte[]> pieces = new ArrayList<>();
+        int pieceSize = 256 * 1024; // 256KB
+
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] buffer = new byte[pieceSize];
+            int bytesRead;
+
+            while ((bytesRead = fis.read(buffer)) > 0) {
+                byte[] piece = new byte[bytesRead];
+                System.arraycopy(buffer, 0, piece, 0, bytesRead);
+                pieces.add(piece);
+            }
+        }
+
+        return pieces;
+    }
+
+    public byte[] loadPieceData(String pieceKey) throws IOException {
+        String safeKey = pieceKey.replace(":", "_");
+        File file = new File(storageDir, safeKey);
+
+        if (!file.exists()) {
+            return null;
+        }
+
+        return Files.readAllBytes(file.toPath());
+    }
+
     private String bytesToHex(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) {
@@ -57,7 +88,21 @@ public class PieceManager {
         list.set(index, data);
         System.out.println("Saved piece " + index + " for torrent " + infoHash);
     }
+    public void savePieceData(String pieceKey, byte[] data) throws IOException {
+        File dir = new File(storageDir);
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
 
+        String safeKey = pieceKey.replace(":", "_");
+        File file = new File(dir, safeKey);
+
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            fos.write(data);
+        }
+
+        System.out.println("Saved: " + pieceKey + " (" + data.length + " bytes)");
+    }
     public int getTotalPieces(String infoHash) {
         List<byte[]> list = pieces.get(infoHash);
         return list == null ? 0 : list.size();

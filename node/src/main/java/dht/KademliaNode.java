@@ -3,7 +3,9 @@ package dht;
 import bittorrent.MetadataStore;
 import bittorrent.PeerServer;
 import bittorrent.PieceManager;
+import bittorrent.TorrentFile;
 import core.*;
+import file.FileManager;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -23,7 +25,8 @@ public class KademliaNode implements Serializable {
     private final Contact selfContact;
     private PeerServer peerServer;
     private final int peerPort;
-
+    private final PieceManager pieceManager;
+    private MetadataStore metadataStore;
     public static final int ALPHA = 3;
     public static final int K = 20;
     public static final long TIMEOUT_MS = 5000;
@@ -31,6 +34,8 @@ public class KademliaNode implements Serializable {
 
     public KademliaNode(int port) throws Exception {
         this.port = port;
+        FileManager fileManager = new FileManager();
+        this.pieceManager = new PieceManager(fileManager,256 * 1024);
         this.localAddress = InetAddress.getLocalHost();
         this.localNodeId = NodeID.fromHash(localAddress.getHostAddress() + ":" + port);
         this.routingTable = new RoutingTable(localNodeId);
@@ -47,6 +52,7 @@ public class KademliaNode implements Serializable {
     public void startPeerServer(PieceManager pieceManager, MetadataStore metadataStore) throws IOException {
         if (peerServer != null) throw new IllegalStateException("Peer server already started");
         peerServer = new PeerServer(peerPort, pieceManager, metadataStore);
+        this.metadataStore = metadataStore;
         peerServer.start();
         System.out.println("✓ Peer Server started on port " + peerPort);
     }
@@ -55,6 +61,36 @@ public class KademliaNode implements Serializable {
         if (peerServer != null) {
             peerServer.stop();
             peerServer = null;
+        }
+    }
+    public void storePiece(String pieceKey, byte[] pieceData) {
+        // 1. Hash piece key thành NodeID
+        NodeID targetId = NodeID.fromHash(pieceKey);
+
+        System.out.println("[storePiece] Key: " + pieceKey + " → Target ID: " + targetId);
+
+        // 2. Tìm K nodes gần nhất (dùng hàm có sẵn của bạn)
+        int replicationFactor = 3; // Lưu ở 3 nodes để redundancy
+        List<Contact> closestNodes = routingTable.findClosestContacts(targetId, replicationFactor);
+
+        System.out.println("[storePiece] Found " + closestNodes.size() + " closest nodes");
+
+        // 3. Store piece vào các nodes đó
+        for (Contact node : closestNodes) {
+            try {
+                // Kiểm tra nếu Rlà local node
+                if (node.getNodeId().equals(localNodeId)) {
+                    // Lưu local
+                    pieceManager.savePieceData(pieceKey, pieceData);
+                    System.out.println("✅ Stored piece locally: " + pieceKey);
+                } else {
+                    // Gửi đến remote node qua DHT
+                    rpc.sendStorePiece(node, pieceKey, pieceData);
+                    System.out.println("✅ Sent piece to " + node.getIp() + ":" + node.getPort());
+                }
+            } catch (Exception e) {
+                System.err.println("❌ Failed to store at " + node.getIp() + ": " + e.getMessage());
+            }
         }
     }
 
@@ -210,7 +246,50 @@ public class KademliaNode implements Serializable {
         }
         return data;
     }
+    public byte[] retrievePiece(String pieceKey) {
+        // 1. Check local first
+        try {
+            byte[] localData = pieceManager.loadPieceData(pieceKey);
+            if (localData != null) {
+                System.out.println("✅ Found piece locally: " + pieceKey);
+                return localData;
+            }
+        } catch (Exception e) {
+            // Not found locally, continue
+        }
 
+        // 2. Hash key để tìm target nodes
+        NodeID targetId = NodeID.fromHash(pieceKey);
+
+        // 3. Tìm nodes có thể chứa piece này
+        List<Contact> nodes = routingTable.findClosestContacts(targetId, 5);
+
+        System.out.println("[retrievePiece] Querying " + nodes.size() + " nodes for: " + pieceKey);
+
+        // 4. Request từ từng node
+        for (Contact node : nodes) {
+            if (node.getNodeId().equals(localNodeId)) {
+                continue; // Skip local, đã check rồi
+            }
+
+            try {
+                byte[] data = rpc.sendGetPiece(node, pieceKey);
+                if (data != null) {
+                    System.out.println("✅ Retrieved piece from " + node.getIp());
+
+                    // Optional: Cache locally
+                    pieceManager.savePieceData(pieceKey, data);
+
+                    return data;
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to get piece from " + node.getIp());
+            }
+        }
+
+        System.err.println("❌ Piece not found: " + pieceKey);
+        return null;
+    }
     public static class FindValueResult {
         private final byte[] value;
         private final List<Contact> contacts;
@@ -219,4 +298,43 @@ public class KademliaNode implements Serializable {
         public byte[] getValue() { return value; }
         public List<Contact> getContacts() { return contacts; }
     }
+    // Thêm vào KademliaNode.java
+
+
+    public PieceManager getPieceManager() {
+        return pieceManager;
+    }
+
+
+    public MetadataStore getMetadataStore() {
+        return metadataStore;
+    }
+
+    public void storeMetadataToDHT(TorrentFile torrent) {
+        // 1. Lưu local
+        metadataStore.storeMetadata(torrent);
+
+        try {
+            // 2. Chuyển infoHash thành NodeID
+            NodeID key = NodeID.fromHash(torrent.getInfoHash());
+
+            // 3. Tìm K node gần nhất
+            List<Contact> closestNodes = routingTable.findClosestContacts(key, K);
+
+            // 4. Gửi metadata đến các node đó
+            for (Contact node : closestNodes) {
+                if (node.getNodeId().equals(localNodeId)) continue; // Skip local
+
+                try {
+                    rpc.sendStoreMetadata(node, torrent);
+                    System.out.println("✅ Sent metadata to " + node.getIp() + ":" + node.getPort());
+                } catch (Exception e) {
+                    System.err.println("Failed to store metadata at " + node.getIp() + ": " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error storing metadata to DHT: " + e.getMessage());
+        }
+    }
+
 }
