@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TorrentManager {
     private final PieceManager pieceManager;
     private final KademliaNode dhtNode;
-    private final ExecutorService executor = Executors.newFixedThreadPool(10);
+    private final ExecutorService executor = Executors.newFixedThreadPool(50);
     private final Map<String, List<PeerConnection>> peerMap = new ConcurrentHashMap<>();
     private final MetadataStore metadataStore;
     public TorrentManager(PieceManager pieceManager, KademliaNode dhtNode, MetadataStore metadataStore) {
@@ -30,7 +30,7 @@ public class TorrentManager {
 
             // 1. Tạo TorrentFile và chia pieces
             TorrentFile torrent = new TorrentFile(file.getName(), file.length(), 256 * 1024);
-            List<byte[]> pieces = pieceManager.splitFile(file);
+            List<byte[]> pieces = pieceManager.loadFile(file);
 
             System.out.println("[seedFile] File split into " + pieces.size() + " pieces");
 
@@ -107,91 +107,26 @@ public class TorrentManager {
     }
     // Fetch metadata
     public TorrentFile fetchMetadata(String infoHash) {
+        // 1. Kiểm tra local cache trước
         if(metadataStore.hasMetadata(infoHash)) {
-            System.out.println("Found metadata for infoHash: " + infoHash);
+            System.out.println("✅ Found metadata in local cache: " + infoHash);
             return metadataStore.getMetadata(infoHash);
         }
-        findPeers(infoHash);
-        List<PeerConnection> peers = peerMap.get(infoHash);
-        if(peers.size() == 0) {
-            System.out.println("No peers found for infoHash: " + infoHash);
-            return null;
+
+        System.out.println("🔍 Fetching metadata from DHT for: " + infoHash);
+
+        // 2. Lấy metadata trực tiếp từ DHT
+        TorrentFile metadata = dhtNode.getMetadataFromDHT(infoHash);
+
+        if(metadata != null) {
+            System.out.println("✅ Retrieved metadata from DHT: " + infoHash);
+            metadataStore.storeMetadata(metadata);
+            return metadata;
         }
-        for(PeerConnection peer : peers) {
-            TorrentFile torent = peer.requestMetadata(infoHash);
-            if(torent != null) {
-                metadataStore.storeMetadata(torent);
-                return torent;
-            }
-        }
-        System.out.println("Failed to find metadata for infoHash: " + infoHash);
+
+        System.out.println("❌ Failed to find metadata for: " + infoHash);
         return null;
     }
-    // DOWNLOAD FILE
-    public void downloadTorrent(TorrentFile torrent, String outputDir) throws InterruptedException {
-        String infoHash = torrent.getInfoHash();
-        int totalPieces = torrent.getPieces().size();
-
-        System.out.println("[download] Starting download: " + torrent.getFileName());
-        System.out.println("[download] Total pieces: " + totalPieces);
-
-        CountDownLatch latch = new CountDownLatch(totalPieces);
-
-        // Download pieces song song
-        for (int i = 0; i < totalPieces; i++) {
-            final int pieceIndex = i;
-            executor.submit(() -> {
-                try {
-                    String pieceKey = infoHash + ":" + pieceIndex;
-
-                    // Lấy piece từ DHT (DHT tự tìm node có piece)
-                    byte[] piece = dhtNode.retrievePiece(pieceKey);
-
-                    if (piece != null) {
-                        // Verify hash
-                        String hash = util.HashUtil.sha1(piece);
-                        String expectedHash = torrent.getPieces().get(pieceIndex);
-
-                        if (hash.equals(expectedHash)) {
-                            pieceManager.savePiece(infoHash, pieceIndex, piece);
-                            System.out.println("✅ Downloaded piece " + pieceIndex);
-                        } else {
-                            System.err.println("❌ Hash mismatch for piece " + pieceIndex);
-                        }
-                    } else {
-                        System.err.println("❌ Failed to download piece " + pieceIndex);
-                    }
-                } catch (Exception e) {
-                    System.err.println("❌ Error downloading piece " + pieceIndex + ": " + e.getMessage());
-                }
-                latch.countDown();
-            });
-        }
-
-        latch.await();
-
-        // Reassemble file
-        reassembleFile(infoHash, torrent, outputDir);
-    }
-
-    private void reassembleFile(String infoHash, TorrentFile torrent, String outputDir) {
-        File outputFile = new File(outputDir, torrent.getFileName());
-
-        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
-            for (int i = 0; i < torrent.getPieces().size(); i++) {
-                byte[] piece = pieceManager.getPiece(infoHash, i);
-                if (piece != null) {
-                    fos.write(piece);
-                }
-            }
-            System.out.println("✅ File assembled: " + outputFile.getAbsolutePath());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        System.out.println("Download completed: " + outputFile.getAbsolutePath());
-    }
-
     public void downloadAndStream(String infoHash, OutputStream outputStream) throws Exception {
         System.out.println("[TorrentManager] Starting streaming download: " + infoHash);
 
@@ -242,8 +177,6 @@ public class TorrentManager {
                 }
             });
         }
-
-        // 3. Stream pieces theo thứ tự về client
         System.out.println("[TorrentManager] Streaming pieces to client...");
         BufferedOutputStream bufferedOutput = new BufferedOutputStream(outputStream, 65536);
 

@@ -63,6 +63,9 @@ public class NodeDiscoveryService {
                     nodes.add(bootstrapNode);
                     nodes.addAll(discovered);
                     System.out.println("✅ Kết nối thành công, tìm thấy " + nodes.size() + " node(s)");
+                    for(Contact node : discovered) {
+                        System.out.println("node " + node.getIp() + ":" + node.getHttpPort());
+                    }
                     break;
                 } else {
                     System.out.println("⚠️ Chưa tìm thấy node nào, retry...");
@@ -110,7 +113,8 @@ public class NodeDiscoveryService {
      */
     private List<Contact> fetchNodesFromBootstrap(Contact bootstrapNode) {
         try {
-            String url = "http://" + bootstrapNode.getIp() + ":" + bootstrapNode.getPort() + "/node/nodes";
+            System.out.println("fetch nodes from bootstrap node "+bootstrapNode.getIp()+":"+bootstrapNode.getHttpPort() );
+            String url = "http://" + bootstrapNode.getIp() + ":" + bootstrapNode.getHttpPort() + "/node/nodes";
             ResponseEntity<List<String>> response = rest.exchange(
                     url,
                     HttpMethod.GET,

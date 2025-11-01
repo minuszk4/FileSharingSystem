@@ -3,7 +3,9 @@ package dht;
 import bittorrent.TorrentFile;
 import core.*;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -96,15 +98,27 @@ public class KademliaRPC {
 
             // Send request
             tcpSocket.getOutputStream().write(request.toBytes());
+
             tcpSocket.shutdownOutput();
+            System.out.println("[RPC->TCP] Sent request, waiting for response...");
 
             // Wait for response
-            byte[] buffer = new byte[1024 * 1024]; // 1MB buffer for large pieces
-            int bytesRead = tcpSocket.getInputStream().read(buffer);
 
-            if (bytesRead > 0) {
-                byte[] responseData = Arrays.copyOf(buffer, bytesRead);
-                return Message.fromBytes(responseData);
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] tmp = new byte[8192];
+            int len;
+
+            InputStream in = tcpSocket.getInputStream();
+            while ((len = in.read(tmp)) != -1) {
+                buffer.write(tmp, 0, len);
+            }
+
+            byte[] responseData = buffer.toByteArray();
+
+            if (responseData.length > 0) {
+                Message response = Message.fromBytes(responseData);
+                System.out.println("✅ [RPC->TCP] Received response: " + response.getType());
+                return response;
             }
 
             throw new Exception("No response received via TCP");

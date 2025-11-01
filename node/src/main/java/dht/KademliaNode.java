@@ -6,8 +6,11 @@ import bittorrent.PieceManager;
 import bittorrent.TorrentFile;
 import core.*;
 import file.FileManager;
+import util.HashUtil;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.net.*;
 import java.util.*;
@@ -31,6 +34,7 @@ public class KademliaNode implements Serializable {
     public static final int K = 20;
     public static final long TIMEOUT_MS = 5000;
     int http_port = Integer.parseInt(System.getenv("HTTP_PORT"));
+    private final ExecutorService storeExecutor = Executors.newFixedThreadPool(50);
 
     public KademliaNode(int port) throws Exception {
         this.port = port;
@@ -53,13 +57,13 @@ public class KademliaNode implements Serializable {
         if (peerServer != null) throw new IllegalStateException("Peer server already started");
         peerServer = new PeerServer(peerPort, pieceManager, metadataStore);
         this.metadataStore = metadataStore;
-        peerServer.start();
+//        peerServer.start();
         System.out.println("✓ Peer Server started on port " + peerPort);
     }
 
     public void stopPeerServer() {
         if (peerServer != null) {
-            peerServer.stop();
+//            peerServer.stop();
             peerServer = null;
         }
     }
@@ -77,20 +81,22 @@ public class KademliaNode implements Serializable {
 
         // 3. Store piece vào các nodes đó
         for (Contact node : closestNodes) {
-            try {
-                // Kiểm tra nếu Rlà local node
-                if (node.getNodeId().equals(localNodeId)) {
-                    // Lưu local
-                    pieceManager.savePieceData(pieceKey, pieceData);
-                    System.out.println("✅ Stored piece locally: " + pieceKey);
-                } else {
-                    // Gửi đến remote node qua DHT
-                    rpc.sendStorePiece(node, pieceKey, pieceData);
-                    System.out.println("✅ Sent piece to " + node.getIp() + ":" + node.getPort());
+            storeExecutor.submit(() -> {
+                try {
+                    // Kiểm tra nếu Rlà local node
+                    if (node.getNodeId().equals(localNodeId)) {
+                        // Lưu local
+                        pieceManager.savePieceData(pieceKey, pieceData);
+                        System.out.println("✅ Stored piece locally: " + pieceKey);
+                    } else {
+                        // Gửi đến remote node qua DHT
+                        rpc.sendStorePiece(node, pieceKey, pieceData);
+                        System.out.println("✅ Sent piece to " + node.getIp() + ":" + node.getPort());
+                    }
+                } catch (Exception e) {
+                    System.err.println("❌ Failed to store at " + node.getIp() + ": " + e.getMessage());
                 }
-            } catch (Exception e) {
-                System.err.println("❌ Failed to store at " + node.getIp() + ": " + e.getMessage());
-            }
+            });
         }
     }
 
@@ -209,7 +215,7 @@ public class KademliaNode implements Serializable {
         try {
             byte[] infoHashBytes = hexStringToByteArray(infoHashHex);
             NodeID key = new NodeID(infoHashBytes);
-            String value = getLocalIp() + ":" + peerPort;
+            String value = getLocalIp() + ":" + port;
 
             List<Contact> closest = routingTable.findClosestContacts(key, K);
             for (Contact contact : closest) {
@@ -278,7 +284,7 @@ public class KademliaNode implements Serializable {
                     System.out.println("✅ Retrieved piece from " + node.getIp());
 
                     // Optional: Cache locally
-                    pieceManager.savePieceData(pieceKey, data);
+//                    pieceManager.savePieceData(pieceKey, data);
 
                     return data;
                 }
@@ -290,6 +296,64 @@ public class KademliaNode implements Serializable {
         System.err.println("❌ Piece not found: " + pieceKey);
         return null;
     }
+
+    public TorrentFile getMetadataFromDHT(String infoHash) {
+        try {
+            System.out.println("[DHT] Looking up metadata for: " + infoHash);
+
+            // Tạo key cho metadata (giống như khi store)
+            NodeID metadataKey =  NodeID.fromHash(infoHash+":"+"metadata" );
+
+            List<Contact> closestNodes = routingTable.findClosestContacts(metadataKey, K);
+
+            if (closestNodes.isEmpty()) {
+                System.out.println("⚠ No nodes in routing table");
+                return null;
+            }
+
+            // Query các nodes song song
+            List<Future<KademliaNode.FindValueResult>> futures = new ArrayList<>();
+            for (Contact contact : closestNodes) {
+                futures.add(rpc.findValueAsync(contact, metadataKey));
+            }
+
+            // Đợi kết quả
+            for (Future<KademliaNode.FindValueResult> future : futures) {
+                try {
+                    FindValueResult result = future.get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+                    if (result.value!= null) {
+                        // Deserialize metadata từ bytes
+                        ByteArrayInputStream bis = new ByteArrayInputStream(result.value);
+                        ObjectInputStream ois = new ObjectInputStream(bis);
+                        TorrentFile metadata = (TorrentFile) ois.readObject();
+
+                        System.out.println("✅ Found metadata from DHT: " + metadata.getFileName());
+                        return metadata;
+                    }
+
+                    // Nếu có thêm contacts, thêm vào routing table
+                    if (result.contacts != null) {
+                        result.contacts.forEach(routingTable::addContact);
+                    }
+
+                } catch (TimeoutException e) {
+                    // Skip timeout nodes
+                } catch (Exception e) {
+                    System.err.println("Error querying node: " + e.getMessage());
+                }
+            }
+
+            System.out.println("⚠ Metadata not found in DHT");
+            return null;
+
+        } catch (Exception e) {
+            System.err.println("❌ Error fetching metadata from DHT: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
     public static class FindValueResult {
         private final byte[] value;
         private final List<Contact> contacts;
@@ -315,22 +379,23 @@ public class KademliaNode implements Serializable {
         metadataStore.storeMetadata(torrent);
 
         try {
-            // 2. Chuyển infoHash thành NodeID
             NodeID key = NodeID.fromHash(torrent.getInfoHash());
-
-            // 3. Tìm K node gần nhất
             List<Contact> closestNodes = routingTable.findClosestContacts(key, K);
 
-            // 4. Gửi metadata đến các node đó
-            for (Contact node : closestNodes) {
-                if (node.getNodeId().equals(localNodeId)) continue; // Skip local
-
-                try {
-                    rpc.sendStoreMetadata(node, torrent);
-                    System.out.println("✅ Sent metadata to " + node.getIp() + ":" + node.getPort());
-                } catch (Exception e) {
-                    System.err.println("Failed to store metadata at " + node.getIp() + ": " + e.getMessage());
-                }
+            // Batching: gửi metadata trong các job async (kích thước batch = 5)
+            int batchSize = 5;
+            for (int i = 0; i < closestNodes.size(); i += batchSize) {
+                List<Contact> batch = closestNodes.subList(i, Math.min(i + batchSize, closestNodes.size()));
+                storeExecutor.submit(() -> {
+                    for (Contact node : batch) {
+                        if (node.getNodeId().equals(localNodeId)) continue;
+                        try {
+                            rpc.sendStoreMetadata(node, torrent);
+                        } catch (Exception e) {
+                            System.err.println("Failed to store metadata at " + node.getIp() + ": " + e.getMessage());
+                        }
+                    }
+                });
             }
         } catch (Exception e) {
             System.err.println("Error storing metadata to DHT: " + e.getMessage());

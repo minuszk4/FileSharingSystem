@@ -67,7 +67,7 @@ public class DownloadController {
                 });
 
             } catch (Exception e) {
-                System.err.println("❌ [Gateway] Proxy failed: " + e.getMessage());
+                System.err.println("[Gateway] Proxy failed: " + e.getMessage());
                 throw new IOException("Download failed", e);
             }
         };

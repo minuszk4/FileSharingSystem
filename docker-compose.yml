@@ -26,7 +26,7 @@ services:
       - SPRING_PROFILES_ACTIVE=docker
       - TRACKER_URL=http://tracker:8081
       - NODE_DISCOVERY_URL=http://node1:2206
-      - BOOTSTRAP_NODE=node1:8082:8085
+      - BOOTSTRAP_NODE=node1:8082:8082
       - NODES=http://node1:8082,http://node2:8083,http://node3:8084,http://node4:8085,http://node5:8086
 
     depends_on:

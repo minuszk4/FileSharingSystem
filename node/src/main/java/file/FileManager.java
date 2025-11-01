@@ -31,7 +31,7 @@ public class FileManager {
         return chunkHashes;
     }
 
-    // Ghép file từ chunk list
+    // Ghép file từ chunk list (Lúc trước đợi merge xong mới gửi h ko cần)
     public boolean mergeFile(List<byte[]> chunkHashes, File outFile) {
         try (OutputStream os = new BufferedOutputStream(new FileOutputStream(outFile))) {
             for (byte[] hash : chunkHashes) {

@@ -165,7 +165,9 @@ public class KademliaServer {
                 message.getType() == Message.MessageType.STORE_RESPONSE ||
                 message.getType() == Message.MessageType.FIND_NODE_RESPONSE ||
                 message.getType() == Message.MessageType.FIND_VALUE_RESPONSE ||
-                message.getType() == Message.MessageType.GET_PIECES_RESPONSE; // ← ADD THIS
+                message.getType() == Message.MessageType.GET_PIECES_RESPONSE||
+                message.getType() == Message.MessageType.STORE_METADATA_RESPONSE;
+
 
     }
 
@@ -335,25 +337,38 @@ public class KademliaServer {
     }
 
 
+//    private void sendResponse(Message response, Contact recipient) throws IOException {
+//        byte[] data = response.toBytes();
+//
+//        // Check if too large for UDP
+//        if (data.length > 60000) {
+//            System.out.println("⚠ Large response (" + data.length + " bytes), using TCP");
+//            sendViaTCP(response, recipient);
+//        } else {
+//            DatagramPacket packet = new DatagramPacket(
+//                    data,
+//                    data.length,
+//                    recipient.getAddress().getAddress(),
+//                    recipient.getAddress().getPort()
+//            );
+//            socket.send(packet);
+//            System.out.println("✅ Sent response to " + recipient.getIp());
+//        }
+//    }
     private void sendResponse(Message response, Contact recipient) throws IOException {
         byte[] data = response.toBytes();
 
-        // Check if too large for UDP
-        if (data.length > 60000) {
-            System.out.println("⚠ Large response (" + data.length + " bytes), using TCP");
-            sendViaTCP(response, recipient);
-        } else {
-            DatagramPacket packet = new DatagramPacket(
-                    data,
-                    data.length,
-                    recipient.getAddress().getAddress(),
-                    recipient.getAddress().getPort()
-            );
-            socket.send(packet);
-            System.out.println("✅ Sent response to " + recipient.getIp());
-        }
+        // Chỉ gửi qua UDP
+        // TCP response đã được xử lý trong handleTCPConnection()
+        DatagramPacket packet = new DatagramPacket(
+                data,
+                data.length,
+                recipient.getAddress().getAddress(),
+                recipient.getAddress().getPort()
+        );
+        socket.send(packet);
+        System.out.println("✅ Sent UDP response to " + recipient.getIp());
     }
-
     private void sendViaTCP(Message response, Contact recipient) {
         Socket tcp = null;
         try {
@@ -491,6 +506,5 @@ public class KademliaServer {
             }
         }
     }
-
 
 }

@@ -19,42 +19,11 @@ public class PieceManager {
         this.pieceSize = pieceSize;
     }
 
-    public List<byte[]> loadFile(String infoHash, File file) throws IOException {
+    public List<byte[]> loadFile(File file) throws IOException {
         System.out.println("[loadFile] Start loading file: " + file.getAbsolutePath());
 
         List<byte[]> chunkHashes = fileManager.splitFile(file); // trả về list hash
-
-        if (chunkHashes == null || chunkHashes.isEmpty()) {
-            System.out.println("[loadFile] WARNING: No chunks returned for file " + file.getName());
-        } else {
-            System.out.println("[loadFile] Total chunks: " + chunkHashes.size());
-            for (int i = 0; i < chunkHashes.size(); i++) {
-                System.out.println("[loadFile] Chunk " + i + " hash: " + bytesToHex(chunkHashes.get(i)));
-            }
-        }
-
-        pieces.put(infoHash, chunkHashes);
-        System.out.println("[loadFile] Finished loading file with infoHash: " + infoHash);
-
         return chunkHashes;
-    }
-
-    public List<byte[]> splitFile(File file) throws IOException {
-        List<byte[]> pieces = new ArrayList<>();
-        int pieceSize = 256 * 1024; // 256KB
-
-        try (FileInputStream fis = new FileInputStream(file)) {
-            byte[] buffer = new byte[pieceSize];
-            int bytesRead;
-
-            while ((bytesRead = fis.read(buffer)) > 0) {
-                byte[] piece = new byte[bytesRead];
-                System.arraycopy(buffer, 0, piece, 0, bytesRead);
-                pieces.add(piece);
-            }
-        }
-
-        return pieces;
     }
 
     public byte[] loadPieceData(String pieceKey) throws IOException {
